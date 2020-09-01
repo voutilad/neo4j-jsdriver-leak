@@ -3,8 +3,13 @@ const neo4j = require('neo4j-driver')
 const URI = process.env.NEO4J_URI || 'bolt://localhost:7687'
 const USER = process.env.NEO4J_USER || 'neo4j'
 const PASSWORD = process.env.NEO4J_PASSWORD || 'password'
+const DB = process.env.NEO4J_DBNAME || false
+const BATCHSIZE = process.env.NEO4J_BATCH || 1000
+const LOGLEVEL = process.env.NEO4J_LOGLEVEL || 'debug'
 
-const driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD))
+const driver = neo4j.driver(URI,
+			    neo4j.auth.basic(USER, PASSWORD),
+			    { logging: neo4j.logging.console(LOGLEVEL) })
 
 // Peek inside the given driver and see how many Connections are "open"
 function countOpenConns(driver) {
@@ -22,9 +27,9 @@ let openSessions = 0
 
 // This mimics some of the behavior in neo4j-graphql-js
 // See: https://github.com/neo4j-graphql/neo4j-graphql-js/blob/master/src/index.js#L128-L140
-async function query(driver, database) {
+async function query(driver, database=false) {
   let result
-  let session = driver.session({ database })
+  let session = database ? driver.session({ database }) : driver.session()
   try {
     openSessions++
     result = await session.run('RETURN 1')
@@ -36,7 +41,7 @@ async function query(driver, database) {
 }
 
 // Concurrently queue up a bunch of queries
-function leak(driver, database, times=500) {
+function leak(driver, database=false, times=500) {
   let results = []
   for (let i=0; i<times; i++) {
     results.push(query(driver, database))
@@ -49,6 +54,6 @@ function leak(driver, database, times=500) {
 setInterval(() => {
   console.log(`${(new Date()).toLocaleTimeString()} open connections: ${countOpenConns(driver)}, open sessions: ${openSessions}`)
   if (openSessions == 0) {
-    leak(driver, 'neo4j')
+    leak(driver, DB, BATCHSIZE)
   }
 }, 1000)
